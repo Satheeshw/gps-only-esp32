@@ -1,0 +1,90 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <TinyGPSPlus.h>
+#include <HardwareSerial.h>
+
+// -------- WiFi Settings --------
+const char* ssid = "ttf";       // 🔹 Change this
+const char* password = "sa63th74";   // 🔹 Change this
+
+// -------- GPS Setup --------
+TinyGPSPlus gps;
+HardwareSerial gpsSerial(1);  // use UART1 for GPS
+
+// -------- Web Server --------
+WebServer server(80);
+
+String latitude = "";
+String longitude = "";
+
+// -------- HTML Page --------
+String htmlPage() {
+  String page = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
+  page += "<meta http-equiv='refresh' content='5'>"; // refresh every 5 sec
+  page += "<title>ESP32 GPS Tracker</title></head><body>";
+  page += "<h2>🌍 ESP32 Live GPS Location</h2>";
+  if (latitude != "" && longitude != "") {
+    page += "<p><b>Latitude:</b> " + latitude + "</p>";
+    page += "<p><b>Longitude:</b> " + longitude + "</p>";
+    page += "<iframe width='100%' height='450' src='https://maps.google.com/maps?q=" 
+          + latitude + "," + longitude + "&hl=es;z=15&amp;output=embed'></iframe>";
+  } else {
+    page += "<p>📡 Waiting for GPS signal...</p>";
+  }
+  page += "</body></html>";
+  return page;
+}
+
+void handleRoot() {
+  server.send(200, "text/html", htmlPage());
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  // -------- GPS Serial Start --------
+  gpsSerial.begin(9600, SERIAL_8N1, 16, 17); // GPS TX → GPIO16, GPS RX → GPIO17
+  Serial.println("GPS Module Started...");
+
+  // -------- WiFi Connect --------
+  Serial.println("Connecting to WiFi...");
+  WiFi.begin(ssid, password);
+
+  int retry = 0;
+  while (WiFi.status() != WL_CONNECTED && retry < 30) {
+    delay(500);
+    Serial.print(".");
+    retry++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n✅ WiFi Connected!");
+    Serial.print("ESP32 IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n❌ WiFi Connection Failed! Check SSID/Password.");
+  }
+
+  // -------- Start Web Server --------
+  server.on("/", handleRoot);
+  server.begin();
+  Serial.println("Web server started.");
+}
+
+void loop() {
+  // -------- Read GPS Data --------
+  while (gpsSerial.available() > 0) {
+    if (gps.encode(gpsSerial.read())) {
+      if (gps.location.isValid()) {
+        latitude = String(gps.location.lat(), 6);
+        longitude = String(gps.location.lng(), 6);
+        Serial.print("Lat: "); Serial.println(latitude);
+        Serial.print("Lng: "); Serial.println(longitude);
+      }
+    }
+  }
+
+  // -------- Handle Clients --------
+  server.handleClient();
+}
